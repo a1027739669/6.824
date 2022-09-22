@@ -23,16 +23,16 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 
-	index := rf.lastLog().Index + 1
+	index := rf.lastLogIndex() + 1
 	rf.log = append(rf.log, Entry{index, rf.currentTerm, command})
 	rf.persist()
 
 	// defer utils.Debug(utils.DLog2, "S%d append log: %+v", rf.me, rf.log)
-	utils.Debug(utils.DClient, "S%d cmd: %+v, logIndex: %d", rf.me, command, rf.lastLog().Index)
+	utils.Debug(utils.DClient, "S%d cmd: %+v, logIndex: %d", rf.me, command, rf.lastLogIndex())
 
 	rf.doAppendEntries()
 
-	return rf.lastLog().Index, rf.currentTerm, true
+	return rf.lastLogIndex(), rf.currentTerm, true
 }
 
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
@@ -45,11 +45,11 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 	utils.Debug(utils.DSnap, "S%d CondInstallSnapshot(lastIncludedTerm: %d lastIncludedIndex: %d lastApplied: %d commitIndex: %d)", rf.me, lastIncludedTerm, lastIncludedIndex, rf.lastApplied, rf.commitIndex)
 
 	if lastIncludedIndex <= rf.commitIndex {
-		utils.Debug(utils.DSnap, "S%d refuse, snapshot too old(%d <= %d)", rf.me, lastIncludedIndex, rf.frontLog().Index)
+		utils.Debug(utils.DSnap, "S%d refuse, snapshot too old(%d <= %d)", rf.me, lastIncludedIndex, rf.frontLogIndex())
 		return false
 	}
 
-	if lastIncludedIndex > rf.lastLog().Index {
+	if lastIncludedIndex > rf.lastLogIndex() {
 		rf.log = make([]Entry, 1)
 	} else {
 		// in range, ignore out of range error
@@ -88,7 +88,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	utils.Debug(utils.DSnap, "S%d call Snapshot, index: %d", rf.me, index)
 
 	// refuse to install a snapshot
-	if rf.frontLog().Index >= index {
+	if rf.frontLogIndex() >= index {
 		utils.Debug(utils.DSnap, "S%d refuse, have received %d snapshot", rf.me, index)
 		return
 	}

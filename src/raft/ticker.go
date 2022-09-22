@@ -1,9 +1,10 @@
 package raft
 
 import (
-	"6.824/utils"
 	"math/rand"
 	"time"
+
+	"6.824/utils"
 )
 
 func (rf *Raft) electionTimeout() bool {

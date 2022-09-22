@@ -43,16 +43,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 	return
 	// }
 
-	if args.PrevLogIndex < rf.frontLog().Index {
-		reply.XTerm, reply.XIndex, reply.Success = -2, rf.frontLog().Index+1, false
-		utils.Debug(utils.DInfo, "S%d args's prevLogIndex too smaller(%v < %v)", rf.me, args.PrevLogIndex, rf.frontLog().Index)
+	if args.PrevLogIndex < rf.frontLogIndex() {
+		reply.XTerm, reply.XIndex, reply.Success = -2, rf.frontLogIndex() + 1, false
+		utils.Debug(utils.DInfo, "S%d args's prevLogIndex too smaller(%v < %v)", rf.me, args.PrevLogIndex, rf.frontLogIndex())
 		return
 	}
 
-	if args.PrevLogIndex > rf.lastLog().Index {
+	if args.PrevLogIndex > rf.lastLogIndex() {
 		reply.Success = false
 		reply.XTerm = -1
-		reply.XLen = args.PrevLogIndex - rf.lastLog().Index
+		reply.XLen = args.PrevLogIndex - rf.lastLogIndex()
 		return
 	}
 
@@ -92,10 +92,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = args.LeaderCommit
-		if args.LeaderCommit > rf.lastLog().Index {
-			rf.commitIndex = rf.lastLog().Index
+		if args.LeaderCommit > rf.lastLogIndex() {
+			rf.commitIndex = rf.lastLogIndex()
 		}
-		utils.Debug(utils.DCommit, "S%d commit to %v(lastLogIndex: %d)", rf.me, rf.commitIndex, rf.lastLog().Index)
+		utils.Debug(utils.DCommit, "S%d commit to %v(lastLogIndex: %d)", rf.me, rf.commitIndex, rf.lastLogIndex())
 		rf.applyCond.Signal()
 	}
 	// utils.Debug(utils.DInfo, "S%d log: %+v", rf.me, rf.log)

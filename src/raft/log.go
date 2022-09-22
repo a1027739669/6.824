@@ -11,14 +11,23 @@ type Entry struct {
 func (rf *Raft) frontLog() Entry {
 	return rf.log[0]
 }
+
+func (rf *Raft) frontLogIndex() int {
+	return rf.log[0].Index
+}
+
 func (rf *Raft) lastLog() Entry {
 	return rf.log[len(rf.log)-1]
 }
 
+func (rf *Raft) lastLogIndex() int {
+	return rf.log[len(rf.log)-1].Index
+}
+
 // nextIndex max is len(log), will out of range
 func (rf *Raft) transfer(index int) (int, int) {
-	begin := rf.frontLog().Index
-	end := rf.lastLog().Index
+	begin := rf.frontLogIndex()
+	end := rf.lastLogIndex()
 	// left open, right close
 	// fuck range!
 	if index < begin || index > end {
@@ -27,9 +36,10 @@ func (rf *Raft) transfer(index int) (int, int) {
 	}
 	return index - begin, 0
 }
+
 func (rf *Raft) getEntry(index int) (Entry, int) {
-	begin := rf.frontLog().Index
-	end := rf.lastLog().Index
+	begin := rf.frontLogIndex()
+	end := rf.lastLogIndex()
 	// left open, right close
 	// fuck range!
 	if index < begin || index > end {
@@ -38,6 +48,7 @@ func (rf *Raft) getEntry(index int) (Entry, int) {
 	}
 	return rf.log[index-begin], 0
 }
+
 func (rf *Raft) isUpToDate(lastLogIndex int, lastLogTerm int) bool {
 	entry := rf.lastLog()
 	index := entry.Index
@@ -47,13 +58,14 @@ func (rf *Raft) isUpToDate(lastLogIndex int, lastLogTerm int) bool {
 	}
 	return lastLogTerm > term
 }
+
 func (rf *Raft) toCommit() {
 	// append entries before commit
-	if rf.commitIndex >= rf.lastLog().Index {
+	if rf.commitIndex >= rf.lastLogIndex() {
 		return
 	}
 
-	for i := rf.lastLog().Index; i > rf.commitIndex; i-- {
+	for i := rf.lastLogIndex(); i > rf.commitIndex; i-- {
 		entry, err := rf.getEntry(i)
 		if err < 0 {
 			continue
@@ -77,5 +89,23 @@ func (rf *Raft) toCommit() {
 		}
 	}
 
-	utils.Debug(utils.DCommit, "S%d don't have half replicated from %v to %v now", rf.me, rf.commitIndex, rf.lastLog().Index)
+	utils.Debug(utils.DCommit, "S%d don't have half replicated from %v to %v now", rf.me, rf.commitIndex, rf.lastLogIndex())
+}
+
+func (rf *Raft) HasLogInCurrentTerm() bool {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	for i := len(rf.log) - 1; i > 0; i-- {
+		if rf.log[i].Term > rf.currentTerm {
+			continue
+		}
+		if rf.log[i].Term == rf.currentTerm {
+			return true
+		}
+		if rf.log[i].Term < rf.currentTerm {
+			break
+		}
+	}
+	return false
 }

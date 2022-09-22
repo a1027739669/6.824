@@ -14,7 +14,11 @@ const (
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
 	// Your code here (2A).
-	return rf.currentTerm, rf.status == leader
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	term := rf.currentTerm
+	isleader := (rf.status == leader)
+	return term, isleader
 }
 
 // without lock

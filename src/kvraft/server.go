@@ -1,29 +1,15 @@
 package kvraft
 
 import (
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"6.824/labgob"
 	"6.824/labrpc"
 	"6.824/raft"
-	"log"
-	"sync"
-	"sync/atomic"
+	"6.824/utils"
 )
-
-const Debug = false
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-	return
-}
-
-
-type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
-}
 
 type KVServer struct {
 	mu      sync.Mutex
@@ -35,15 +21,11 @@ type KVServer struct {
 	maxraftstate int // snapshot if log grows this big
 
 	// Your definitions here.
-}
-
-
-func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
-}
-
-func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	KvMap          *KV
+	cmdRespChans   map[IndexAndTerm]chan OpResp
+	LastCmdContext map[int64]OpContext
+	lastApplied    int
+	lastSnapshot   int
 }
 
 //
@@ -58,8 +40,12 @@ func (kv *KVServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 //
 func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
-	kv.rf.Kill()
 	// Your code here, if desired.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	//fmt.Printf("---kill\n")
+	kv.doSnapshot(kv.lastApplied)
+	kv.rf.Kill()
 }
 
 func (kv *KVServer) killed() bool {
@@ -92,10 +78,97 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 
-	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.applyCh = make(chan raft.ApplyMsg, 5)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
+	kv.KvMap = NewKV()
+	kv.cmdRespChans = make(map[IndexAndTerm]chan OpResp)
+	kv.LastCmdContext = make(map[int64]OpContext)
+	kv.lastApplied = 0
+	kv.lastSnapshot = 0
+
+	// load data from persister
+	kv.setSnapshot(persister.ReadSnapshot())
+
+	// long-time goroutines
+	go kv.applier()
+	go kv.snapshoter()
 
 	return kv
+}
+
+// Handler
+func (kv *KVServer) Command(args *CmdArgs, reply *CmdReply) {
+	defer utils.Debug(utils.DWarn, "S%d args: %+v reply: %+v", kv.me, args, reply)
+
+	kv.mu.Lock()
+	if args.OpType != OpGet && kv.isDuplicate(args.ClientId, args.SeqId) {
+		context := kv.LastCmdContext[args.ClientId]
+		reply.Value, reply.Err = context.Reply.Value, context.Reply.Err
+		kv.mu.Unlock()
+		return
+	}
+	kv.mu.Unlock()
+
+	cmd := Op{
+		ClientId: args.ClientId,
+		SeqId:    args.SeqId,
+		OpType:   args.OpType,
+		Key:      args.Key,
+		Value:    args.Value,
+	}
+	index, term, is_leader := kv.rf.Start(cmd)
+	if !is_leader {
+		reply.Value, reply.Err = "", ErrWrongLeader
+		return
+	}
+
+	kv.mu.Lock()
+	it := IndexAndTerm{index, term}
+	ch := make(chan OpResp, 1)
+	kv.cmdRespChans[it] = ch
+	kv.mu.Unlock()
+
+	defer func() {
+		kv.mu.Lock()
+		// close(kv.cmdRespChans[index])
+		delete(kv.cmdRespChans, it)
+		kv.mu.Unlock()
+		close(ch)
+	}()
+
+	t := time.NewTimer(cmd_timeout)
+	defer t.Stop()
+
+	for {
+		kv.mu.Lock()
+		select {
+		case resp := <-ch:
+			utils.Debug(utils.DServer, "S%d have applied, resp: %+v", kv.me, resp)
+			reply.Value, reply.Err = resp.Value, resp.Err
+			kv.mu.Unlock()
+			return
+		case <-t.C:
+		priority:
+			for {
+				select {
+				case resp := <-ch:
+					utils.Debug(utils.DServer, "S%d have applied, resp: %+v", kv.me, resp)
+					reply.Value, reply.Err = resp.Value, resp.Err
+					kv.mu.Unlock()
+					return
+				default:
+					break priority
+				}
+			}
+			utils.Debug(utils.DServer, "S%d timeout", kv.me)
+			reply.Value, reply.Err = "", ErrTimeout
+			kv.mu.Unlock()
+			return
+		default:
+			kv.mu.Unlock()
+			time.Sleep(gap_time)
+		}
+	}
 }

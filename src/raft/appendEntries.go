@@ -2,6 +2,8 @@ package raft
 
 import "6.824/utils"
 
+// ticker() call doAppendEntries(), ticker() hold lock
+// if a node turn to leader, leader will call doAppendEntries() to send a heartbeat
 func (rf *Raft) doAppendEntries() {
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -9,7 +11,7 @@ func (rf *Raft) doAppendEntries() {
 		}
 
 		wantSendIndex := rf.nextIndex[i] - 1
-		if wantSendIndex < rf.frontLog().Index {
+		if wantSendIndex < rf.frontLogIndex() {
 			go rf.doInstallSnapshot(i)
 		} else {
 			go rf.appendTo(i)

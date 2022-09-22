@@ -2,8 +2,10 @@ package raft
 
 import "6.824/utils"
 
+//
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
+//
 type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term         int
@@ -48,6 +50,7 @@ type InstallSnapshotReply struct {
 	Term int
 }
 
+//
 // example code to send a RequestVote RPC to a server.
 // server is the index of the target server in rf.peers[].
 // expects RPC arguments in args.
@@ -75,20 +78,18 @@ type InstallSnapshotReply struct {
 // capitalized all field names in structs passed over RPC, and
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
+//
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	utils.Debug(utils.DInfo, "S%d send RequestVote request to %d {%+v}", rf.me, server, args)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
-}
-func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
-	utils.Debug(utils.DInfo, "S%d send InstallSnapshot request to %d {%+v}", rf.me, server, args)
-	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
 	if !ok {
-		utils.Debug(utils.DWarn, "S%d call (InstallSnapshot)rpc to C%d error", rf.me, server)
+		utils.Debug(utils.DWarn, "S%d call (RequestVote)rpc to C%d error", rf.me, server)
 		return ok
 	}
-	utils.Debug(utils.DInfo, "S%d get InstallSnapshot response from %d {%+v}", rf.me, server, reply)
+	utils.Debug(utils.DInfo, "S%d get RequestVote response from %d {%+v}", rf.me, server, reply)
 	return ok
 }
+
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	utils.Debug(utils.DInfo, "S%d send AppendEntries request to %d {%+v}", rf.me, server, args)
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
@@ -97,5 +98,16 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 		return ok
 	}
 	utils.Debug(utils.DInfo, "S%d get AppendEntries response from %d {%+v}", rf.me, server, reply)
+	return ok
+}
+
+func (rf *Raft) sendInstallSnapshot(server int, args *InstallSnapshotArgs, reply *InstallSnapshotReply) bool {
+	utils.Debug(utils.DInfo, "S%d send InstallSnapshot request to %d {%+v}", rf.me, server, args)
+	ok := rf.peers[server].Call("Raft.InstallSnapshot", args, reply)
+	if !ok {
+		utils.Debug(utils.DWarn, "S%d call (InstallSnapshot)rpc to C%d error", rf.me, server)
+		return ok
+	}
+	utils.Debug(utils.DInfo, "S%d get InstallSnapshot response from %d {%+v}", rf.me, server, reply)
 	return ok
 }
